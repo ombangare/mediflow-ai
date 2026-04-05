@@ -14,10 +14,13 @@ CORS(app)
 # -----------------------------
 # Data & Config
 # -----------------------------
-DATA_FILE = "../data/sample_patients.json"
+# VERCEL FIX: Vercel is read-only. /tmp/ is the only place we can write.
+DATA_FILE = "/tmp/sample_patients.json"
 DOCTORS = ["Dr. Sharma", "Dr. Mehta", "Dr. Iyer"]
 
 def assign_doctor(queue):
+    if not queue:
+        return DOCTORS[0]
     return DOCTORS[len(queue) % len(DOCTORS)]
 
 def load_data():
@@ -32,9 +35,13 @@ def load_data():
     return []
 
 def save_data(data):
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    # VERCEL FIX: Wrap in try-except so the app never crashes if writing is blocked
+    try:
+        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Local save skipped (Expected on Vercel): {e}")
 
 queue = load_data()
 
@@ -50,7 +57,6 @@ def analyze_priority(disease, symptoms):
     symptoms_text = ", ".join(symptoms).lower() if symptoms else ""
     combined_text = disease_lower + " " + symptoms_text
 
-    # List of keywords mapped to priority levels
     CRITICAL_KEYWORDS = [
         "heart attack", "chest pain", "cardiac", "stroke", "pain in heart", "heart",
         "breathing difficulty", "shortness of breath", "unconscious", "fainting", 
@@ -89,16 +95,14 @@ def generate_advice(disease, priority_score):
         return "Condition appears stable. Routine checkup protocols apply."
 
 # -----------------------------
-# Routes
+# Routes (Updated with /api to match your frontend)
 # -----------------------------
 
-@app.route('/add_patient', methods=['POST'])
+@app.route('/api/add_patient', methods=['POST'])
 def add_patient():
-    global queue # Ensure we are modifying the global queue
+    global queue 
     try:
         data = request.json
-
-        # ✅ SAFE INPUT HANDLING
         raw_symptoms = data.get('symptoms', [])
         if isinstance(raw_symptoms, str):
             symptoms = [s.strip() for s in raw_symptoms.split(',') if s.strip()]
@@ -113,7 +117,6 @@ def add_patient():
         if not name or age == 0:
             return jsonify({"error": "Name and age are required"}), 400
 
-        # ✅ AI Processing & Priority Calculation
         disease = predict_disease(symptoms)
         priority, reason = analyze_priority(disease, symptoms)
         
@@ -139,18 +142,15 @@ def add_patient():
             "status": "Waiting"
         }
 
-        # ✅ Firebase save 
         try:
             db.collection("patients").document(patient_id).set(patient)
         except Exception as e:
             print("Firebase error:", e)
 
-        # ✅ Local queue appending AND immediate sorting!
         queue.append(patient)
         queue = sorted(queue, key=lambda x: int(x.get('priority', 0)), reverse=True)
-        #save_data(queue)
+        save_data(queue)
 
-        # Get exact index to calculate wait time accurately
         patient_index = next((i for i, p in enumerate(queue) if p['id'] == patient_id), 0)
         wait_time = patient_index * 15
 
@@ -171,33 +171,28 @@ def add_patient():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/queue', methods=['GET'])
+@app.route('/api/queue', methods=['GET'])
 def get_queue():
     sorted_queue = sorted(queue, key=lambda x: int(x.get('priority', 0)), reverse=True)
     return jsonify(sorted_queue)
 
 
-@app.route('/complete_patient/<string:patient_id>', methods=['POST'])
+@app.route('/api/complete_patient/<string:patient_id>', methods=['POST'])
 def complete_patient(patient_id):
     global queue
-    
     data = request.json or {}
     doctor_advice = data.get('advice', 'Standard treatment applied. Rest and hydrate.')
-
     patient_to_remove = next((p for p in queue if p.get('id') == patient_id), None)
 
     if patient_to_remove:
         patient_to_remove['advice'] = doctor_advice
         patient_to_remove['status'] = 'Treated'
-
         queue.remove(patient_to_remove)
-        #save_data(queue)
+        save_data(queue)
 
         try:
             db.collection("completed_patients").document(patient_id).set(patient_to_remove)
             db.collection("patients").document(patient_id).delete() 
-            
-            # AUTOMATICALLY ADD TO PATIENT HISTORY
             history_record = {
                 "patient_id": patient_id,
                 "date": datetime.datetime.now().strftime("%b %d, %Y"),
@@ -207,175 +202,66 @@ def complete_patient(patient_id):
                 "created_at": datetime.datetime.now().isoformat()
             }
             db.collection('patient_history').add(history_record)
-
         except Exception as e:
             print("Firebase error:", e)
 
-        return jsonify({
-            "message": "Patient marked as treated and prescription saved.",
-            "removed": patient_to_remove
-        })
-
+        return jsonify({"message": "Patient marked as treated.", "removed": patient_to_remove})
     return jsonify({"error": "Patient not found"}), 404
 
 
-@app.route('/analytics', methods=['GET'])
-def get_analytics():
-    return jsonify({
-        "peak_hours": get_peak_hours(queue)
-    })
-
-
-@app.route('/priority', methods=['GET'])
-def get_priority_patients():
-    return jsonify([p for p in queue if p.get('priority', 0) >= 100])
-
-
-@app.route('/doctor_stats', methods=['GET'])
-def doctor_stats():
-    return jsonify({
-        "total_patients": len(queue),
-        "critical_cases": len([p for p in queue if p.get('priority', 0) >= 100])
-    })
-
-
-@app.route('/patient_status/<string:patient_id>', methods=['GET'])
+@app.route('/api/patient_status/<string:patient_id>', methods=['GET'])
 def get_patient_status(patient_id):
     sorted_queue = sorted(queue, key=lambda x: int(x.get('priority', 0)), reverse=True)
-    
     for index, p in enumerate(sorted_queue):
         if p.get('id') == patient_id:
-            wait_time = index * 15 
-            return jsonify({
-                "position": index + 1, 
-                "wait_time": wait_time,
-                "status": p.get('status', 'Waiting')
-            })
-            
-    try:
-        treated_doc = db.collection("completed_patients").document(patient_id).get()
-        if treated_doc.exists:
-            data = treated_doc.to_dict()
-            return jsonify({
-                "position": 0,
-                "wait_time": 0,
-                "status": "Treated",
-                "advice": data.get('advice')
-            })
-    except Exception as e:
-        pass
-
+            return jsonify({"position": index + 1, "wait_time": index * 15, "status": p.get('status', 'Waiting')})
     return jsonify({"error": "Patient not found"}), 404
 
-@app.route('/call_patient/<string:patient_id>', methods=['POST'])
+
+@app.route('/api/call_patient/<string:patient_id>', methods=['POST'])
 def call_patient(patient_id):
     global queue
     patient = next((p for p in queue if p.get('id') == patient_id), None)
-    
     if patient:
         patient['status'] = 'Called'
-        #save_data(queue)
-        
+        save_data(queue)
         try:
             db.collection("patients").document(patient_id).update({"status": "Called"})
         except Exception:
             pass
-            
         return jsonify({"message": "Patient called successfully"})
-        
     return jsonify({"error": "Patient not found"}), 404
 
-@app.route('/patient_history/<string:patient_id>', methods=['GET'])
+
+@app.route('/api/patient_history/<string:patient_id>', methods=['GET'])
 def get_patient_history(patient_id):
     try:
         history_ref = db.collection('patient_history').where('patient_id', '==', patient_id).stream()
-        history = []
-        for doc in history_ref:
-            data = doc.to_dict()
-            data['id'] = doc.id
-            history.append(data)
-        
+        history = [doc.to_dict() for doc in history_ref]
         history = sorted(history, key=lambda x: x.get('created_at', ''), reverse=True)
         return jsonify(history), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/add_external_history/<string:patient_id>', methods=['POST'])
-def add_external_history(patient_id):
-    try:
-        data = request.json
-        date_str = data.get("date")
-        if not date_str:
-            date_str = datetime.datetime.now().strftime("%b %d, %Y")
-        else:
-            date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-            date_str = date_obj.strftime("%b %d, %Y")
 
-        record = {
-            "patient_id": patient_id,
-            "date": date_str,
-            "condition": data.get("condition", "External Consultation"),
-            "advice": data.get("advice", ""),
-            "source": "External Doctor",
-            "created_at": datetime.datetime.now().isoformat()
-        }
-        db.collection('patient_history').add(record)
-        return jsonify({"message": "External record added successfully"}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/retrieve_patient', methods=['POST'])
+@app.route('/api/retrieve_patient', methods=['POST'])
 def retrieve_patient():
     global queue
     data = request.json
-    phone_to_find = data.get('phone', '').strip()
-    
-    if not phone_to_find:
-        return jsonify({"error": "Phone number is required"}), 400
+    phone = data.get('phone', '').strip()
+    if not phone:
+        return jsonify({"error": "Phone number required"}), 400
 
-    # 1. Search for the patient in the ACTIVE queue first
-    existing_patient = next((p for p in queue if p.get('phone') == phone_to_find), None)
-
-    if existing_patient:
-        return jsonify({
-            "success": True,
-            "patient": {
-                **existing_patient,
-                "aiAssessment": {
-                    "id": existing_patient['id'],
-                    "condition": existing_patient.get('disease', ''),
-                    "risk_level": existing_patient.get('risk_level', ''),
-                    "advice": existing_patient.get('advice', ''),
-                    "priority": existing_patient.get('priority', 0)
-                }
-            }
-        }), 200
+    existing = next((p for p in queue if p.get('phone') == phone), None)
+    if existing:
+        return jsonify({"success": True, "patient": existing}), 200
     
-    # 2. THE FIX: Search for the patient in the COMPLETED queue (Firebase)
     try:
-        completed_ref = db.collection("completed_patients").where("phone", "==", phone_to_find).stream()
-        for doc in completed_ref:
-            completed_patient = doc.to_dict()
-            # If found in completed, return them so they can see their prescription!
-            return jsonify({
-                "success": True,
-                "patient": {
-                    **completed_patient,
-                    "aiAssessment": {
-                        "id": completed_patient['id'],
-                        "condition": completed_patient.get('disease', ''),
-                        "risk_level": completed_patient.get('risk_level', ''),
-                        "advice": completed_patient.get('advice', ''), # This now holds the DOCTOR'S prescription!
-                        "priority": completed_patient.get('priority', 0)
-                    }
-                }
-            }), 200
-    except Exception as e:
-        print("Firebase search error:", e)
+        completed = db.collection("completed_patients").where("phone", "==", phone).stream()
+        for doc in completed:
+            return jsonify({"success": True, "patient": doc.to_dict()}), 200
+    except:
+        pass
+    return jsonify({"error": "No active session found."}), 404
 
-    # 3. If not in active queue AND not in completed queue
-    return jsonify({"error": "No active or recently treated session found for this number."}), 404
-
-
-#if __name__ == '__main__':
- #app.run(debug=True)
+# REQUIRED FOR VERCEL: Do not use app.run() here.
