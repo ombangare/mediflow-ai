@@ -1,0 +1,22 @@
+[
+    {
+        "id": "15cd116e-8d0b-4201-bf6d-a6a20019f3fa",
+        "name": "kaushal kotpalliwar",
+        "phone": "7722889966",
+        "email": "kaushalkotapalliwar@gmail.com",
+        "age": 19,
+        "weight": 25,
+        "height": 170,
+        "symptoms": [
+            "headache"
+        ],
+        "priority": 0,
+        "disease": "General Checkup",
+        "reason": "NORMAL - General Case",
+        "risk_level": "Low",
+        "assigned_doctor": "Dr. Mehta",
+        "arrival_time": "08",
+        "advice": "Condition appears stable based on (headache). Monitor for 24\u201348 hours.",
+        "status": "Called"
+    }
+]
