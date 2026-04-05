@@ -1,7 +1,16 @@
 import axios from 'axios';
 
-// Replace with your actual Flask backend URL
-const API_BASE_URL = 'http://127.0.0.1:5000';
+/**
+ * DYNAMIC API URL CONFIGURATION
+ * -------------------------------------------------------------------------
+ * When you are developing locally, it uses your Flask port (5000).
+ * When it is live on Vercel, it uses the '/api' route which our 
+ * vercel.json redirects to your Python backend.
+ * -------------------------------------------------------------------------
+ */
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://127.0.0.1:5000'
+  : '/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -10,6 +19,7 @@ const apiClient = axios.create({
   },
 });
 
+// 1. Add a new patient and get AI Triage results
 export const addPatientSymptoms = async (patientData) => {
   try {
     const response = await apiClient.post('/add_patient', patientData);
@@ -19,6 +29,7 @@ export const addPatientSymptoms = async (patientData) => {
   }
 };
 
+// 2. Fetch the live prioritized queue
 export const getQueueData = async () => {
   try {
     const response = await apiClient.get('/queue');
@@ -28,9 +39,9 @@ export const getQueueData = async () => {
   }
 };
 
+// 3. Mark patient as treated and save doctor's advice (prescription)
 export const completePatient = async (patientId, adviceText) => {
   try {
-    // Send the advice (prescription) as JSON in the body of the POST request
     const response = await apiClient.post(`/complete_patient/${patientId}`, { 
       advice: adviceText 
     });
@@ -40,7 +51,7 @@ export const completePatient = async (patientId, adviceText) => {
   }
 };
 
-// Check live queue status
+// 4. Check live queue position and wait time for a specific patient
 export const getPatientStatus = async (patientId) => {
   try {
     const response = await apiClient.get(`/patient_status/${patientId}`);
@@ -50,7 +61,7 @@ export const getPatientStatus = async (patientId) => {
   }
 };
 
-// Doctor calls the patient
+// 5. Trigger a "Call Patient" notification (Doctor side)
 export const callPatient = async (patientId) => {
   try {
     const response = await apiClient.post(`/call_patient/${patientId}`);
@@ -60,18 +71,18 @@ export const callPatient = async (patientId) => {
   }
 };
 
-// Fetch Patient's Real Medical History
+// 6. Fetch a patient's historical medical records from Firebase
 export const getPatientHistory = async (patientId) => {
   try {
     const response = await apiClient.get(`/patient_history/${patientId}`);
     return response.data;
   } catch (error) {
     console.error("Error fetching history", error);
-    return []; // Returns empty array if patient has no history yet
+    return []; // Return empty array if no history exists yet
   }
 };
 
-// Add External Doctor Record
+// 7. Manually add an external medical record to history
 export const addExternalHistory = async (patientId, historyData) => {
   try {
     const response = await apiClient.post(`/add_external_history/${patientId}`, historyData);
@@ -81,6 +92,7 @@ export const addExternalHistory = async (patientId, historyData) => {
   }
 };
 
+// 8. Find an existing patient session by phone number (for Login/Status check)
 export const retrieveExistingPatient = async (phone) => {
   try {
     const response = await apiClient.post('/retrieve_patient', { phone });
@@ -89,3 +101,5 @@ export const retrieveExistingPatient = async (phone) => {
     throw error.response?.data || { error: "Server connection failed" };
   }
 };
+
+export default apiClient;

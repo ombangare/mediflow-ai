@@ -22,7 +22,7 @@ const PrescriptionSection = ({ result }) => {
       >
         
         {/* Breathing Glow - Automatically hidden during print because it lacks the ID */}
-        <div className="absolute -inset-1 bg-gradient-to-r from-clinical-400 to-blue-500 rounded-3xl blur opacity-0 hover:opacity-10 transition duration-1000 pointer-events-none no-print"></div>
+        <div className="absolute -inset-1 bg-linear-to-r from-clinical-400 to-blue-500 rounded-3xl blur opacity-0 hover:opacity-10 transition duration-1000 pointer-events-none no-print"></div>
 
         <div className="relative z-10 text-gray-800 dark:text-white">
           
