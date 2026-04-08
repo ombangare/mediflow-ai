@@ -1,22 +1,21 @@
 [
     {
-        "id": "15cd116e-8d0b-4201-bf6d-a6a20019f3fa",
-        "name": "kaushal kotpalliwar",
-        "phone": "7722889966",
-        "email": "kaushalkotapalliwar@gmail.com",
-        "age": 19,
-        "weight": 25,
-        "height": 170,
+        "id": "e2fc0df4-61b3-450b-92ef-f27ba74b0213",
+        "name": "swati roy",
+        "phone": "8668934852",
+        "age": "19",
+        "weight": "42",
+        "height": "155",
         "symptoms": [
-            "headache"
+            "fever"
         ],
-        "priority": 0,
+        "priority": 50,
         "disease": "General Checkup",
-        "reason": "NORMAL - General Case",
-        "risk_level": "Low",
+        "reason": "MODERATE: Stable condition.",
+        "risk_level": "Medium",
         "assigned_doctor": "Dr. Mehta",
-        "arrival_time": "08",
-        "advice": "Condition appears stable based on (headache). Monitor for 24\u201348 hours.",
+        "arrival_time": "11:51",
+        "advice": "Stable: General Checkup. Await doctor consultation.",
         "status": "Called"
     }
 ]

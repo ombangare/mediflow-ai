@@ -65,7 +65,7 @@ const PatientCard = ({ patient, index, onComplete }) => {
           </div>
         </div>
         
-        <div className="space-y-3 mb-6 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="space-y-3 mb-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
           <p className="text-sm dark:text-gray-300 flex justify-between">
             <span className="text-gray-400 font-bold uppercase text-xs">AI Prediction</span>
             <span className={`font-bold ${isCritical ? 'text-red-500' : 'text-clinical-500'}`}>{conditionName}</span>
@@ -74,6 +74,16 @@ const PatientCard = ({ patient, index, onComplete }) => {
             <span className="text-gray-400 font-bold uppercase text-xs">Est. Wait</span>
             <span className="font-bold text-orange-500">{estimatedWait === 0 ? 'Next in Line' : `${estimatedWait} mins`}</span>
           </p>
+        </div>
+
+        {/* --- SYMPTOMS DISPLAY FOR DOCTOR --- */}
+        <div className="mb-6 px-2">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Reported Symptoms</p>
+            <p className="text-sm font-bold text-red-500 capitalize">
+                {patient.symptoms && patient.symptoms.length > 0 
+                    ? patient.symptoms.join(", ") 
+                    : "No symptoms provided"}
+            </p>
         </div>
 
         {/* --- DOCTOR HISTORY TOGGLE BUTTON --- */}

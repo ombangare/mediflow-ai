@@ -1,7 +1,6 @@
 import React, { useContext, useEffect, useState, useCallback } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { getPatientStatus, getPatientHistory, addExternalHistory } from '../api';
-import PrescriptionSection from '../components/PrescriptionSection';
+import { getPatientStatus, getPatientHistory } from '../api';
 import HistoryTimeline from '../components/HistoryTimeline';
 import { toast } from 'react-toastify';
 
@@ -66,26 +65,38 @@ const PatientDashboard = () => {
     return () => clearInterval(interval);
   }, [fetchStatus, patientId]);
 
-  // Handle adding an external record
+  // --- DIRECT LOCAL FETCH TO PREVENT "SAVING..." FREEZE ---
   const handleAddExternalRecord = async (e) => {
     e.preventDefault();
-    setIsSubmittingRecord(true);
+    setIsSubmittingRecord(true); // Starts "Saving..."
+    
     try {
-      await addExternalHistory(patientId, newRecord);
-      toast.success("External record added successfully!");
-      setShowAddRecord(false);
-      setNewRecord({ date: '', condition: '', advice: '' });
-      
-      // Refresh the history timeline
-      const updatedHistory = await getPatientHistory(patientId);
-      setPatientHistory(updatedHistory);
+      const response = await fetch(`http://127.0.0.1:5000/add_external_history/${patientId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newRecord)
+      });
+
+      if (response.ok) {
+          toast.success("External record added successfully!");
+          setShowAddRecord(false);
+          setNewRecord({ date: '', condition: '', advice: '' });
+          
+          const historyRes = await fetch(`http://127.0.0.1:5000/patient_history/${patientId}`);
+          if (historyRes.ok) {
+              const updatedHistory = await historyRes.json();
+              setPatientHistory(updatedHistory);
+          }
+      } else {
+          toast.error("Failed to add record. Check backend.");
+      }
     } catch (error) {
-      toast.error("Failed to add record.");
+      console.error("Network error:", error);
+      toast.error("Network Error: Make sure Flask is running!");
     } finally {
-      setIsSubmittingRecord(false);
+      setIsSubmittingRecord(false); // STOPS "Saving..." instantly
     }
   };
-
 
   if (!patient) return null;
 
@@ -94,7 +105,6 @@ const PatientDashboard = () => {
   const riskLevel = aiData.risk_level || aiData.risk || "Unknown";
   const isHighRisk = String(riskLevel).toLowerCase() === 'high';
   const firstName = patient.name ? String(patient.name).split(' ')[0] : 'Patient';
-  const advice = aiData.advice || aiData.reason || "Please await doctor consultation.";
 
   // --- BMI CALCULATION ---
   const weight = parseFloat(patient.weight) || 0;
@@ -126,6 +136,29 @@ const PatientDashboard = () => {
       bmiColorClass = "text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400";
     }
   }
+
+  // --- NEW DOWNLOAD FUNCTION ---
+  const handleDownloadPrescription = () => {
+    const text = `
+MediFlow AI - Official Medical Record
+-------------------------------------------
+Patient Name: ${patient.name || 'Patient'}
+Date: ${new Date().toLocaleDateString()}
+AI Predicted Condition: ${condition}
+
+DOCTOR'S PRESCRIPTION & ADVICE:
+${liveData.advice || aiData.advice}
+-------------------------------------------
+Generated securely by MediFlow AI
+`;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${firstName}_Prescription.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="container mx-auto p-6 md:p-10 max-w-4xl relative">
@@ -197,6 +230,7 @@ const PatientDashboard = () => {
         </div>
       )}
 
+      {/* 1. ALWAYS SHOW THE AI HEALTH INDICATOR */}
       <div className={`p-8 rounded-3xl shadow-sm border-l-4 mb-8 bg-white dark:bg-gray-800 ${isHighRisk ? 'border-l-red-500' : 'border-l-clinical-500'}`}>
         <div className="flex items-center justify-between mb-8">
            <h2 className="text-2xl font-extrabold text-gray-800 dark:text-white">AI Health Indicator</h2>
@@ -208,12 +242,44 @@ const PatientDashboard = () => {
           </div>
           <div className="md:col-span-2 bg-gray-50 dark:bg-gray-900/50 p-5 rounded-2xl">
              <p className="text-xs text-gray-500 font-bold mb-2 uppercase tracking-wider">Preliminary Advice</p>
-             <p className="font-medium text-gray-800 dark:text-gray-200">{advice}</p>
+             {/* Uses the original AI advice, NOT the doctor's prescription */}
+             <p className="font-medium text-gray-800 dark:text-gray-200">{aiData.advice || aiData.reason || "Please await doctor consultation."}</p>
           </div>
         </div>
       </div>
 
-      {liveData.status !== 'Called' && (
+      {/* 2. SHOW DOCTOR'S PRESCRIPTION ONLY WHEN TREATED (Directly Below AI Box) */}
+      {liveData.status === 'Treated' && (
+        <div className="p-8 rounded-3xl shadow-sm border-l-4 border-l-green-500 mb-8 bg-green-50 dark:bg-gray-800 animate-fade-in-up">
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+             <h2 className="text-2xl font-extrabold text-green-800 dark:text-white flex items-center gap-2">
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+               </svg>
+               Official Doctor's Prescription
+             </h2>
+             <button 
+               onClick={handleDownloadPrescription} 
+               className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2"
+             >
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+               </svg>
+               Download File
+             </button>
+          </div>
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-green-200 dark:border-green-800">
+              <p className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Treatment / Advice:</p>
+              {/* Uses ONLY the liveData.advice which comes from the Doctor's input */}
+              <p className="text-gray-800 dark:text-gray-200 font-bold text-xl whitespace-pre-wrap">
+                  {liveData.advice}
+              </p>
+          </div>
+        </div>
+      )}
+
+      {/* Show the refresh button only if the patient hasn't been treated yet */}
+      {liveData.status !== 'Called' && liveData.status !== 'Treated' && (
         <div className="flex justify-center mb-8 animate-fade-in-up">
           <button 
             onClick={() => fetchStatus(true)} 
@@ -229,10 +295,6 @@ const PatientDashboard = () => {
             {isRefreshing ? 'Checking secure connection...' : "Check for Doctor's Prescription"}
           </button>
         </div>
-      )}
-
-      {liveData.status === 'Treated' && (
-        <PrescriptionSection result={{ ...aiData, status: liveData.status, advice: liveData.advice }} />
       )}
 
       {/* --- REAL MEDICAL HISTORY SECTION --- */}

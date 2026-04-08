@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueue } from '../hooks/useQueue';
 import { AuthContext } from '../context/AuthContext';
@@ -7,8 +7,12 @@ import QueueStats from '../components/QueueStats';
 
 const DoctorDashboard = () => {
   const { queue, isLoading, markPatientAsTreated } = useQueue();
-  const { logout } = useContext(AuthContext); // Brought in the logout function
+  const { logout } = useContext(AuthContext); 
   const navigate = useNavigate();
+
+  // --- 🆕 NEW STATE FOR MEDICAL HISTORY ---
+  const [historyData, setHistoryData] = useState([]);
+  const [expandedPatientId, setExpandedPatientId] = useState(null);
 
   const totalPatients = queue.length;
   const criticalPatients = queue.filter((p) => p.priority >= 100).length;
@@ -20,10 +24,42 @@ const DoctorDashboard = () => {
     navigate('/patient');
   };
 
+  // --- 🆕 NEW FIX: HANDLE CALL IN ---
+  const handleCallIn = async (patientId) => {
+    try {
+        const response = await fetch(`http://127.0.0.1:5000/call_patient/${patientId}`, {
+            method: 'POST'
+        });
+        if (response.ok) {
+            // Force a quick reload so the Doctor sees the UI update instantly
+            window.location.reload(); 
+        }
+    } catch (error) {
+        console.error("Error calling patient:", error);
+    }
+  };
+
+  // --- 🆕 NEW FIX: HANDLE VIEW HISTORY ---
+  const handleViewHistory = async (patientId) => {
+    // If it's already open, click it again to close it
+    if (expandedPatientId === patientId) {
+        setExpandedPatientId(null);
+        return;
+    }
+    try {
+        const response = await fetch(`http://127.0.0.1:5000/patient_history/${patientId}`);
+        const data = await response.json();
+        setHistoryData(data);
+        setExpandedPatientId(patientId); // Opens the dropdown for this specific patient
+    } catch (error) {
+        console.error("Error fetching history:", error);
+    }
+  };
+
   return (
     <div className="container mx-auto p-6 md:p-10 max-w-7xl">
       
-      {/* Header section wrapper - Now uses justify-between to split title and logout button */}
+      {/* Header section wrapper */}
       <div className="flex items-center justify-between mb-8">
         
         {/* Left Side: Back Button & Title */}
@@ -70,8 +106,14 @@ const DoctorDashboard = () => {
             <PatientCard 
               key={patient.id} 
               patient={patient} 
-              index={index} /* <--- THIS FIXES THE NaN ISSUE! */
+              index={index} 
               onComplete={markPatientAsTreated} 
+              
+              /* 🆕 NEW PROPS PASSED TO THE CARD */
+              onCallIn={() => handleCallIn(patient.id)}
+              onViewHistory={() => handleViewHistory(patient.id)}
+              isHistoryExpanded={expandedPatientId === patient.id}
+              historyData={expandedPatientId === patient.id ? historyData : []}
             />
           ))}
         </div>
